@@ -19,19 +19,22 @@ import struct
 from pathlib import Path
 from PIL import Image, ImageDraw
 
-def convert_to_rgb565(src: Path, dst: Path) -> None:
+def convert_to_rgb565(src: Path, dst: Path, full_height: bool) -> None:
 
     # Physical screen dimensions
     screen_width=280
     screen_height=240
     screen_orientation=90
-    maskr=35
+    mask_round_radius=35 # Radius with which to round corners of mask
 
     # Dimensions of mask - region within physical screen to use
     mask_width=258
-    # mask_height=screen_height
-    mask_height=int(round(screen_height/screen_width*mask_width))
-    round_radius=35 # Radius with which to round corners of mask
+    if full_height:
+        # Use full screen height
+        mask_height=screen_height
+    else:
+        # Keep aspect ratio of mask window same as full screen
+        mask_height=int(round(screen_height/screen_width*mask_width))
 
     # Offset of mask withing physical screen
     mask_dx=0 #screen_width-mask_width
@@ -39,12 +42,13 @@ def convert_to_rgb565(src: Path, dst: Path) -> None:
 
     # Create mask image
     mask=Image.new("L", (screen_width, screen_height), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([(0, mask_dy), (mask_width-1, mask_dy+mask_height-1)], radius=round_radius, fill=255 ,width=0)
+    ImageDraw.Draw(mask).rounded_rectangle([(0, mask_dy), (mask_width-1, mask_dy+mask_height-1)], radius=mask_round_radius, fill=255 ,width=0)
     # mask.save('mask.png')
 
     # Load in the image to convert and scale it to fit the mask
     img=Image.open(src).convert("RGB")
     img.thumbnail((mask_width, mask_height), Image.LANCZOS)
+    img=img.rotate(180)
 
     # Offset of image on physical screen
     image_dx=mask_dx+(mask_width-img.width)//2
@@ -70,14 +74,15 @@ def convert_to_rgb565(src: Path, dst: Path) -> None:
             idx += 2
 
     dst.write_bytes(buf)
-    print(f"Saved {dst}  ({canvas.width}x{canvas.height}, {len(buf)} bytes)")
+    print(f"Saved {dst}  ({canvas.width}x{canvas.height}, {len(buf)} bytes, {'full height' if full_height else "keep aspect"})")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert PNG → RGB565 raw binary")
     parser.add_argument("src",           help="Input image file")
     parser.add_argument("--out",         help="Output .raw file (default: same name)")
+    parser.add_argument('--full-height', action="store_true", default=False, help="Use full height of screen")
     args = parser.parse_args()
 
     src = Path(args.src)
     dst = Path(args.out) if args.out else src.with_suffix(".raw")
-    convert_to_rgb565(src, dst)
+    convert_to_rgb565(src, dst, args.full_height)

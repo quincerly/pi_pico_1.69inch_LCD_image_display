@@ -426,12 +426,14 @@ if __name__=='__main__':
     # Touch=Touch_CST816D(mode=1,LCD=LCD)
     # Touch.Touch_Gesture()
     # Touch.Touch_HandWriting()
-    LCD.fill(LCD.red)
+    # LCD.fill(LCD.red)
     # time.sleep(5)
 
     images=list(filter(lambda f: f[-4:]==".raw", os.listdir("")))
     while True:
-        for image in images:
+        for image in images[1:]:
+            ViewImage(images[0])
+            time.sleep(5)
             print(f"Image: {image}")
             ViewImage(image)
             time.sleep(5)
