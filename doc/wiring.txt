@@ -1,0 +1,18 @@
+LCD         Cable       Pico            WvshrRP2040 Tiny    Tiny 2040
+VCC         Red         3.3V            3.3V                3.3V
+GND         Black       GND             GND                 GND
+LCD_DIN     Blue        GP11 SPI1 TX    GP11 SPI1 TX        GP7 SPI0 TX    
+LCD_CLK     Yellow      GP10 SPI1 SCK   GP10 SPI1 SCK       GP6 SPI0 SCK
+LCD_CS      Orange      GP09 SPI1 CSn   GP09 SPI1 CSn       GP5 SPI0 CSn
+LCD_DC      Green       GP14 SPI1 SCK   GP14 SPI1 SCK       GP4 SPI0 RX
+LCD_RST     White       GP08 SPI1 RX    GP08 SPI1 RX        GP3 SPI0 TX
+LCD_BL      Purple      GP15 SPI1 TX    GP15 SPI1 TX        GP2 SPI0 SCK
+TP_SDA      Blue        GP06 SPI0 SCK   GP06 SPI0 SCK 
+TP_SCL      Yellow      GP07 SPI0 TX.   GP07 SPI0 TX  
+TP_RST      Orange      GP16 SPI0 RX.   GP0(4)? SPI0 RX  
+TP_IRQ      Green       GP17 SPI0 CSn   GP1(5)? SPI0 CSn 
+DS1307 SCL                              GP27 I2C1 SCL
+DS1307 SDA                              GP26 I2C1 SDA
+DS1307 VCC                              3.3V
+DS1307 GND                              GND
+Buzzer
