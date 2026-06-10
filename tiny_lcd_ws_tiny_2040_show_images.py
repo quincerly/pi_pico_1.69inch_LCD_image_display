@@ -78,7 +78,6 @@ class LCD_1inch69(framebuf.FrameBuffer):
         self.white =   0xffff
         self.black =   0x0000
         self.brown =   0X8430
-        self.magenta = 0XF81F
         
         self.fill(self.white) #Clear screen  清屏
         self.show()#Show  显示
@@ -408,13 +407,10 @@ class Touch_CST816D(object):
             LCD.write_text('Double click',25,70,2,LCD.black)
             LCD.write_text('to finish...',25,90,2,LCD.black)
             LCD.write_text(f'{self.gesture}',25,130,2,LCD.red)
-            yy, mm, dd=time.localtime()[:3]
-            LCD.write_text("%02d/%02d/%4d" % (dd, mm, yy), 25, 170, 2, LCD.magenta)
-            LCD.write_text("%02d:%02d:%02d" % time.localtime()[3:6], 25, 190, 2, LCD.magenta)
             if rtc is not None:
                 rt=rtc.getTime()
-                LCD.write_text(f"{rt.day:02d}/{rt.month:02d}/{rt.year:4d}", 25, 210, 2, LCD.green)
-                LCD.write_text(f"{rt.hour:02d}:{rt.minute:02d}:{rt.second:02d}", 25, 230, 2, LCD.green)
+                LCD.write_text(f"{rt.day:02d}/{rt.month:02d}/{rt.year:4d}", 25, 170, 2, LCD.green)
+                LCD.write_text(f"{rt.hour:02d}:{rt.minute:02d}:{rt.second:02d}", 25, 190, 2, LCD.green)
                 # print('Current date and time:')
                 # print('Year:', rt.year)
                 # print('Month:', rt.month)
@@ -423,8 +419,11 @@ class Touch_CST816D(object):
                 # print('Minute:', rt.minute)
                 # print('Second:', rt.second)
                 # print('Day of the Week:', rtc.days_of_week[rt.weekday])
-
-            LCD.show() 
+            else:
+                yy, mm, dd=time.localtime()[:3]
+                LCD.write_text("%02d/%02d/%4d" % (dd, mm, yy), 25, 170, 2, LCD.brown)
+                LCD.write_text("%02d:%02d:%02d" % time.localtime()[3:6], 25, 190, 2, LCD.brown)
+            LCD.show()
         
     def Int_Callback(self,pin):
         if self.Mode == 0 :
