@@ -1,7 +1,8 @@
-from machine import Pin,I2C,SPI,PWM,Timer
+from machine import Pin,I2C,SPI,PWM,Timer, SoftI2C
 import framebuf
 import time
 import os
+import urtc
 
 # Pico 2
 #
@@ -19,6 +20,39 @@ MOSI = 11
 # MISO = 12
 RST = 8
 BL = 15
+
+# RTC
+# CLOCK_I2C_CHANNEL=1
+CLOCK_I2C1_SCL=27 
+CLOCK_I2C1_SDA=26
+
+class Clock:
+    def __init__(self):
+        self.rtc=urtc.DS1307(SoftI2C(scl=Pin(CLOCK_I2C1_SCL), sda=Pin(CLOCK_I2C1_SDA), freq=100_000))
+        self.days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+    def setTimeFromSystem(self):
+        initial_time_tuple = time.localtime() #tuple (microPython)
+        initial_time_seconds = time.mktime(initial_time_tuple) # local time in seconds
+        initial_time = urtc.seconds2tuple(initial_time_seconds)
+
+        # Sync the RTC
+        self.rtc.datetime(initial_time)
+
+    def setTimeFromTuple(self, time_tuple):
+        self.rtc.datetime(time_tuple)
+
+    def getTime(self):
+        current_datetime = self.rtc.datetime()
+        # print('Current date and time:')
+        # print('Year:', current_datetime.year)
+        # print('Month:', current_datetime.month)
+        # print('Day:', current_datetime.day)
+        # print('Hour:', current_datetime.hour)
+        # print('Minute:', current_datetime.minute)
+        # print('Second:', current_datetime.second)
+        # print('Day of the Week:', self.days_of_week[current_datetime.weekday])
+        return current_datetime
 
 #LCD Driver  LCD驱动
 class LCD_1inch69(framebuf.FrameBuffer):
@@ -281,7 +315,7 @@ class Touch_CST816D(object):
             print("Error: Not Detected CST816D.")
             return None
         self.Mode = mode
-        self.Gestures="None"
+        self.gesture="None"
         self.Flag = self.Flgh =self.l = 0
         self.X_point = self.Y_point = 0
         self.int.irq(handler=self.Int_Callback,trigger=Pin.IRQ_FALLING)
@@ -365,55 +399,38 @@ class Touch_CST816D(object):
             pass
     
     #Gesture  手势
-    def Touch_Gesture(self):
+    def Touch_Gesture(self, rtc=None):
         self.Mode = 0
         self.Set_Mode(self.Mode)
-        # LCD.write_text('Gesture test',70,90,1,LCD.black)
-        # LCD.write_text('Complete as prompted',35,120,1,LCD.black)
-        # LCD.show()
-        # time.sleep(1)
         LCD.fill(LCD.white)
-        # while self.Gestures != 'up':
-        #     LCD.fill(LCD.white)
-        #     LCD.write_text('Up...',100,110,3,LCD.black)
-        #     LCD.show()
-            
-        # while self.Gestures != 'down':
-        #     LCD.fill(LCD.white)
-        #     LCD.write_text('Down...',70,110,3,LCD.black)
-        #     LCD.show()
-            
-        # while self.Gestures != 'left':
-        #     LCD.fill(LCD.white)
-        #     LCD.write_text('Left...',70,110,3,LCD.black)
-        #     LCD.show()
-            
-        # while self.Gestures != 'right':
-        #     LCD.fill(LCD.white)
-        #     LCD.write_text('Right...',60,110,3,LCD.black)
-        #     LCD.show()
-            
-        # while self.Gestures != 'long_press':
-        #     LCD.fill(LCD.white)
-        #     LCD.write_text('Long press...',40,110,2,LCD.black)
-        #     LCD.show()
-            
-        while self.Gestures != 'double_click':
+        while self.gesture != 'double_click':
             LCD.fill(LCD.white)
             LCD.write_text('Double click',25,70,2,LCD.black)
             LCD.write_text('to finish...',25,90,2,LCD.black)
-            LCD.write_text(f'{self.Gestures}',25,130,2,LCD.red)
+            LCD.write_text(f'{self.gesture}',25,130,2,LCD.red)
             yy, mm, dd=time.localtime()[:3]
             LCD.write_text("%02d/%02d/%4d" % (dd, mm, yy), 25, 170, 2, LCD.magenta)
-            # LCD.write_text(f'{time.localtime()[3:6]}',25,190,2,LCD.magenta)
             LCD.write_text("%02d:%02d:%02d" % time.localtime()[3:6], 25, 190, 2, LCD.magenta)
+            if rtc is not None:
+                rt=rtc.getTime()
+                LCD.write_text(f"{rt.day:02d}/{rt.month:02d}/{rt.year:4d}", 25, 210, 2, LCD.green)
+                LCD.write_text(f"{rt.hour:02d}:{rt.minute:02d}:{rt.second:02d}", 25, 230, 2, LCD.green)
+                # print('Current date and time:')
+                # print('Year:', rt.year)
+                # print('Month:', rt.month)
+                # print('Day:', rt.day)
+                # print('Hour:', rt.hour)
+                # print('Minute:', rt.minute)
+                # print('Second:', rt.second)
+                # print('Day of the Week:', rtc.days_of_week[rt.weekday])
+
             LCD.show() 
         
     def Int_Callback(self,pin):
         if self.Mode == 0 :
             gbyte=self._read_byte(0x01)
-            print(f"Gesture {self.Gestures}")
-            self.Gestures = Gestures.get(gbyte, f"Unknown {gbyte}")
+            # print(f"Gesture {self.gesture}")
+            self.gesture = Gestures.get(gbyte, f"Unknown {gbyte}")
 
         elif self.Mode == 1:           
             self.Flag = 1
@@ -445,23 +462,21 @@ if __name__=='__main__':
     LCD = LCD_1inch69()
     LCD.set_bl_pwm(65535)
 
-    Touch=Touch_CST816D(mode=1,LCD=LCD)
-    Touch.Touch_Gesture()
-    # Touch.Touch_HandWriting()
-    # LCD.fill(LCD.red)
-    # time.sleep(5)
-    
-    # LCD.write_text('Gesture test',70,90,1,LCD.black)
-    # LCD.write_text('Complete as prompted',35,120,1,LCD.black)
-    # LCD.show()
-    # time.sleep(1)
+    clock=Clock()
+    # clock.setTimeFromSystem()
+
+    touch=Touch_CST816D(mode=1,LCD=LCD)
 
     images=list(filter(lambda f: f[-4:]==".raw", os.listdir("")))
+
     while True:
+        touch.Touch_Gesture(rtc=clock)
         for image in images[1:]:
+            if touch.gesture=="long_press": break
             ViewImage(images[0])
             time.sleep(5)
-            print(f"Image: {image}")
+            # print(f"Image: {image}")
+            if touch.gesture=="long_press": break
             ViewImage(image)
             time.sleep(5)
 
