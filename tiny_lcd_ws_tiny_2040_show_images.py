@@ -3,6 +3,7 @@ import framebuf
 import time
 import os
 import urtc
+import rp2
 
 # Pico 2
 #
@@ -25,6 +26,33 @@ BL = 15
 # CLOCK_I2C_CHANNEL=1
 CLOCK_I2C1_SCL=27 
 CLOCK_I2C1_SDA=26
+
+BUZZ=28
+
+@rp2.asm_pio(set_init=rp2.PIO.OUT_LOW)
+def square_wave():
+    wrap_target()
+    set(pins, 1)   # Pin HIGH
+    set(pins, 0)   # Pin LOW
+    wrap()
+
+class Buzzer:
+    def __init__(self, freq=2_000):
+        self.pin = Pin(BUZZ, Pin.OUT)
+        self.sm=rp2.StateMachine(0, square_wave, freq=freq, set_base=self.pin)
+    def buzz(self, duration=1):
+        # print("buzz on")
+        self.sm.active(1)
+        time.sleep(duration)
+        self.sm.active(0)
+        # print("buzz off")
+
+def Alarm():
+    buzzer=Buzzer();
+    ViewImage("alarm.raw")
+    while touch.gesture != "click": 
+        buzzer.buzz(duration=0.5)
+        time.sleep(0.5)
 
 class Clock:
     def __init__(self):
@@ -430,6 +458,8 @@ class Touch_CST816D(object):
             gbyte=self._read_byte(0x01)
             # print(f"Gesture {self.gesture}")
             self.gesture = Gestures.get(gbyte, f"Unknown {gbyte}")
+            # Buzzer().buzz(duration=0.2, freq=1000)
+            Buzzer().buzz(duration=0.2)
 
         elif self.Mode == 1:           
             self.Flag = 1
@@ -458,6 +488,9 @@ def ViewImage(filename):
 
 if __name__=='__main__':
 
+    # buzzer=Buzzer()
+    # buzzer.buzz(duration=10, freq=2000)
+
     LCD = LCD_1inch69()
     LCD.set_bl_pwm(65535)
 
@@ -466,10 +499,11 @@ if __name__=='__main__':
 
     touch=Touch_CST816D(mode=1,LCD=LCD)
 
-    images=list(filter(lambda f: f[-4:]==".raw", os.listdir("")))
+    images=list(filter(lambda f: f[-4:]==".raw" and f!="alarm.raw", os.listdir("")))
 
     while True:
         touch.Touch_Gesture(rtc=clock)
+        Alarm()
         for image in images[1:]:
             if touch.gesture=="long_press": break
             ViewImage(images[0])
