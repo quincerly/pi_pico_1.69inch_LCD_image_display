@@ -553,7 +553,7 @@ def ViewImageWithClock(
         filename,
         # time_opts={'x': 55, 'y': 75, 'size': 3, 'colour': LCD_1inch69.black, 'outline_thick': 2, 'outline_colour': RGBtoBRG565(1, 0.97, 0)},
         time_opts={'x': 40, 'y': 75, 'size': 4, 'colour': LCD_1inch69.black, 'outline_thick': 2, 'outline_colour': RGBtoRGB565(0.9, 0.87, 0.9)},
-        sec_opts={'x': 210, 'y': 75, 'size': 3, 'colour': LCD_1inch69.black, 'outline_thick': 2, 'outline_colour': RGBtoRGB565(0.9, 0.87, 0.9)},
+        sec_opts={'x': 213, 'y': 78, 'size': 3, 'colour': LCD_1inch69.black, 'outline_thick': 1, 'outline_colour': RGBtoRGB565(0.9, 0.87, 0.9)},
         date_opts={'x': 70, 'y': 248, 'size': 2, 'colour': LCD_1inch69.white, 'shadow_offset': 3, 'shadow_colour': LCD_1inch69.black},
     ):
     # print(f"Loading {filename}...")
