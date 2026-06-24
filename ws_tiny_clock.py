@@ -28,38 +28,20 @@ CLOCK_I2C1_SCL=27
 CLOCK_I2C1_SDA=26
 
 BUZZ=28
-def RGBtoBRG565(r, g, b):
-    # Clamp inputs to keep values strictly between 0.0 and 1.0
-    r = max(0.0, min(1.0, r))
-    g = max(0.0, min(1.0, g))
-    b = max(0.0, min(1.0, b))
-    
-    # Scale to maximum bit depths (5 bits = 31, 6 bits = 63)
-    r_5 = int(round(r * 31))
-    g_6 = int(round(g * 63))
-    b_5 = int(round(b * 31))
-    
-    # Pack into BRG565: B(5 bits) | R(6 bits) | G(5 bits)
-    brg565 = (b_5 << 11) | (r_5 << 5) | g_6
-    
-    # Return as an integer
-    return brg565
 
-def RGBtoRGB565(r, g, b):
-    # Clamp inputs to keep values strictly between 0.0 and 1.0
-    r = max(0.0, min(1.0, r))
-    g = max(0.0, min(1.0, g))
-    b = max(0.0, min(1.0, b))
-    
-    # Scale to maximum bit depths (5 bits = 31, 6 bits = 63)
-    r_5 = int(round(r * 31))
-    g_6 = int(round(g * 63))
-    b_5 = int(round(b * 31))
-    
-    # Pack into standard RGB565: R(5 bits) | G(6 bits) | B(5 bits)
-    rgb565 = (r_5 << 11) | (g_6 << 5) | b_5
-    
-    return rgb565
+def RGB565(r: float, g: float, b: float) -> int:
+    """
+    Convert floating-point RGB (0.0–1.0) to 16-bit colour for the
+    Waveshare 1.69" ST7789V2, which uses a rotated channel order:
+      logical R → green field (6-bit)
+      logical G → blue field  (5-bit)
+      logical B → red field   (5-bit)
+    """
+    r6 = (int(r * 255) >> 2) & 0x3F  # 6 bits for green field
+    g5 = (int(g * 255) >> 3) & 0x1F  # 5 bits for blue field
+    b5 = (int(b * 255) >> 3) & 0x1F  # 5 bits for red field
+
+    return (b5 << 11) | (r6 << 5) | g5
 
 @rp2.asm_pio(set_init=rp2.PIO.OUT_LOW)
 def square_wave():
@@ -79,17 +61,17 @@ class Buzzer:
         self.sm.active(0)
         # print("buzz off")
 
-def Alarm():
+def Alarm(lcd, touch):
     buzzer=Buzzer();
-    ViewImage("alarm.raw")
+    ViewImage(lcd, "alarm.raw")
     while touch.gesture != "click": 
         buzzer.buzz(duration=0.5)
         time.sleep(0.5)
 
-class Clock:
+class RTC:
+    days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     def __init__(self):
-        self.rtc=urtc.DS1307(SoftI2C(scl=Pin(CLOCK_I2C1_SCL), sda=Pin(CLOCK_I2C1_SDA), freq=100_000))
-        self.days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        self._rtc=urtc.DS1307(SoftI2C(scl=Pin(CLOCK_I2C1_SCL), sda=Pin(CLOCK_I2C1_SDA), freq=100_000))
 
     def setTimeFromSystem(self):
         initial_time_tuple = time.localtime() #tuple (microPython)
@@ -97,13 +79,13 @@ class Clock:
         initial_time = urtc.seconds2tuple(initial_time_seconds)
 
         # Sync the RTC
-        self.rtc.datetime(initial_time)
+        self._rtc.datetime(initial_time)
 
     def setTimeFromTuple(self, time_tuple):
-        self.rtc.datetime(time_tuple)
+        self._rtc.datetime(time_tuple)
 
     def getTime(self):
-        current_datetime = self.rtc.datetime()
+        current_datetime = self._rtc.datetime()
         # print('Current date and time:')
         # print('Year:', current_datetime.year)
         # print('Month:', current_datetime.month)
@@ -111,7 +93,7 @@ class Clock:
         # print('Hour:', current_datetime.hour)
         # print('Minute:', current_datetime.minute)
         # print('Second:', current_datetime.second)
-        # print('Day of the Week:', self.days_of_week[current_datetime.weekday])
+        # print('Day of the Week:', days_of_week[current_datetime.weekday])
         return current_datetime
 
 #LCD Driver  LCD驱动
@@ -122,8 +104,9 @@ class LCD_1inch69(framebuf.FrameBuffer):
     white =   0xffff
     black =   0x0000
     # brown =   0X8430
-    orange=RGBtoBRG565(1, 0.8, 0)
-    cyan=RGBtoBRG565(0, 1, 1)
+    orange=RGB565(1, 0.7, 0)
+    cyan=RGB565(0, 1, 1)
+    yellow=RGB565(1, 1, 0)
 
     def __init__(self): #SPI initialization  SPI初始化
         self.width = 240
@@ -143,7 +126,7 @@ class LCD_1inch69(framebuf.FrameBuffer):
         super().__init__(self.buffer, self.width, self.height, framebuf.RGB565)
         self.init_display()
                 
-        self.fill(self.white) #Clear screen  清屏
+        self.fill(self.green) #Clear screen  清屏
         self.show()#Show  显示
 
         self.pwm = PWM(Pin(BL))
@@ -521,7 +504,7 @@ class Touch_CST816D(object):
             gbyte=self._read_byte(0x01)
             # print(f"Gesture {self.gesture}")
             self.gesture = Gestures.get(gbyte, f"Unknown {gbyte}")
-            Buzzer().buzz(duration=0.2)
+            # Buzzer().buzz(duration=0.2)
 
         elif self.Mode == 1:           
             self.Flag = 1
@@ -538,34 +521,38 @@ def load_raw(filename):
     with open(filename, "rb") as f:
         return bytearray(f.read())
 
-def ViewImage(filename):
+def ViewImage(lcd, filename):
     print(f"Loading {filename}...")
     try:
         with open(filename, "rb") as f:
-            f.readinto(LCD.buffer)   # read directly into the existing buffer
+            f.readinto(lcd.buffer)   # read directly into the existing buffer
         # LCD.write_text(filename, 25, 90, 2, LCD_1inch69.white)
-        LCD.show()
+        lcd.show()
     except OSError as e:
         print(f"ERROR: could not open {filename}: {e}")
 
 
 def ViewImageWithClock(
-        filename,
-        # time_opts={'x': 55, 'y': 75, 'size': 3, 'colour': LCD_1inch69.black, 'outline_thick': 2, 'outline_colour': RGBtoBRG565(1, 0.97, 0)},
-        time_opts={'x': 40, 'y': 75, 'size': 4, 'colour': LCD_1inch69.black, 'outline_thick': 2, 'outline_colour': RGBtoRGB565(0.9, 0.87, 0.9)},
-        sec_opts={'x': 213, 'y': 78, 'size': 3, 'colour': LCD_1inch69.black, 'outline_thick': 1, 'outline_colour': RGBtoRGB565(0.9, 0.87, 0.9)},
-        date_opts={'x': 70, 'y': 248, 'size': 2, 'colour': LCD_1inch69.white, 'shadow_offset': 3, 'shadow_colour': LCD_1inch69.black},
+        lcd,
+        clock,
+        filename=None,
+        # time_opts={'x': 55, 'y': 75, 'size': 3, 'colour': LCD_1inch69.black, 'outline_thick': 2, 'outline_colour': RGB565(1, 0.97, 0)},
+        time_opts=None,
+        sec_opts=None,
+        date_opts=None,
     ):
     # print(f"Loading {filename}...")
     try:
-
         # Image
         with open(filename, "rb") as f:
-            f.readinto(LCD.buffer)   # read directly into the existing buffer
+            f.readinto(lcd.buffer)   # read directly into the existing buffer
+    except OSError as e:
+        print(f"ERROR: could not open {filename}: {e}")
 
-        rt=clock.getTime()
-        # print(rt)
+    rt=clock.getTime()
+    # print(rt)
 
+    if time_opts is not None:
         # Time
         timestr=f"{rt.hour:02d}:{rt.minute:02d}" #:{rt.second:02d}"
         for (dx, dy) in zip(
@@ -574,9 +561,10 @@ def ViewImageWithClock(
                 # [v*time_opts['outline_thick'] for v in [-1, -1, -1,  0,  1,  1,  1,  0]],
                 # [v*time_opts['outline_thick'] for v in [-1,  0,  1,  1,  1,  0, -1, -1]],
             ):
-            LCD.write_text(timestr, time_opts['x']+dx, time_opts['y']+dy, time_opts['size'], time_opts['outline_colour'], rot90=True)
-        LCD.write_text(timestr, time_opts['x'], time_opts['y'], time_opts['size'], time_opts['colour'], rot90=True)
+            lcd.write_text(timestr, time_opts['x']+dx, time_opts['y']+dy, time_opts['size'], time_opts['outline_colour'], rot90=True)
+        lcd.write_text(timestr, time_opts['x'], time_opts['y'], time_opts['size'], time_opts['colour'], rot90=True)
 
+    if sec_opts is not None:
         # Seconds
         secstr=f"{rt.second:02d}"
         for (dx, dy) in zip(
@@ -585,50 +573,76 @@ def ViewImageWithClock(
                 # [v*sec_opts['outline_thick'] for v in [-1, -1, -1,  0,  1,  1,  1,  0]],
                 # [v*sec_opts['outline_thick'] for v in [-1,  0,  1,  1,  1,  0, -1, -1]],
             ):
-            LCD.write_text(secstr, sec_opts['x']+dx, sec_opts['y']+dy, sec_opts['size'], sec_opts['outline_colour'], rot90=True)
-        LCD.write_text(secstr, sec_opts['x'], sec_opts['y'], sec_opts['size'], sec_opts['colour'], rot90=True)
+            lcd.write_text(secstr, sec_opts['x']+dx, sec_opts['y']+dy, sec_opts['size'], sec_opts['outline_colour'], rot90=True)
+        lcd.write_text(secstr, sec_opts['x'], sec_opts['y'], sec_opts['size'], sec_opts['colour'], rot90=True)
 
+    if date_opts is not None:
         # Date
-        LCD.write_text(f"{rt.day:02d}/{rt.month:02d}/{rt.year:4d}", date_opts['x']+date_opts['shadow_offset'], date_opts['y']+date_opts['shadow_offset'], 2, date_opts['shadow_colour'], rot90=True)
-        LCD.write_text(f"{rt.day:02d}/{rt.month:02d}/{rt.year:4d}", date_opts['x'], date_opts['y'], 2, date_opts['colour'], rot90=True)
+        lcd.write_text(f"{rt.day:02d}/{rt.month:02d}/{rt.year:4d}", date_opts['x']+date_opts['shadow_offset'], date_opts['y']+date_opts['shadow_offset'], 2, date_opts['shadow_colour'], rot90=True)
+        lcd.write_text(f"{rt.day:02d}/{rt.month:02d}/{rt.year:4d}", date_opts['x'], date_opts['y'], 2, date_opts['colour'], rot90=True)
 
-        LCD.show()
-    except OSError as e:
-        print(f"ERROR: could not open {filename}: {e}")
+    lcd.show()
+
+def Run(duration=30):
+
+    brightness=1
+
+    lcd=LCD_1inch69()
+    def updateBrightness(brightness):
+        minbrightness=0.1
+        maxbrightness=1
+        if brightness<minbrightness or brightness>maxbrightness:
+            # Flash off briefly to report range limit
+            lcd.set_bl_pwm(0)
+            time.sleep_ms(250)
+
+        brightness=min(maxbrightness, max(minbrightness, brightness)) # Clip to range 0-1
+        lcd.set_bl_pwm(int(round(65535*brightness)))
+        print(f"brightness={brightness}")
+        return brightness
+
+    brightness=updateBrightness(brightness)
+    # lcd.set_bl_pwm(int(round(65535*brightness)))
+    rtc=RTC()
 
 
-if __name__=='__main__':
-
-    # buzzer=Buzzer()
-    # buzzer.buzz(duration=10, freq=2000)
-
-    LCD = LCD_1inch69()
-    LCD.set_bl_pwm(65535)
-
-    clock=Clock()
     # clock.setTimeFromSystem()
 
-    touch=Touch_CST816D(mode=1,LCD=LCD)
+    touch=Touch_CST816D(mode=1, LCD=lcd)
     touch.Set_Mode(0)
 
-    images=list(filter(lambda f: f[-4:]==".raw" and f!="alarm.raw", os.listdir("")))
+    # images=list(filter(lambda f: f[-4:]==".raw" and f!="alarm.raw", os.listdir("")))
+
+    clocks=[
+        {
+            'filename': '010_TSOTTC.raw',
+            'time_opts': {'x': 40, 'y': 75, 'size': 4, 'colour': LCD_1inch69.black, 'outline_thick': 2, 'outline_colour': LCD_1inch69.orange},
+            'sec_opts': {'x': 213, 'y': 78, 'size': 3, 'colour': LCD_1inch69.black, 'outline_thick': 1, 'outline_colour': LCD_1inch69.orange},
+            'date_opts': {'x': 70, 'y': 248, 'size': 2, 'colour': LCD_1inch69.white, 'shadow_offset': 3, 'shadow_colour': LCD_1inch69.black},
+        },
+        {
+            'filename': '021_EliteTube.raw',
+            'time_opts': {'x': 41, 'y': 58, 'size': 4, 'colour': LCD_1inch69.white, 'outline_thick': 1, 'outline_colour': LCD_1inch69.black},
+            'sec_opts': {'x': 213, 'y': 60, 'size': 3, 'colour': LCD_1inch69.black, 'outline_thick': 1, 'outline_colour': LCD_1inch69.orange},
+            'date_opts': {'x': 70, 'y': 200, 'size': 2, 'colour': LCD_1inch69.white, 'shadow_offset': 1, 'shadow_colour': LCD_1inch69.black},
+        },
+    ]
+
 
     while True:
-        ViewImageWithClock(images[0])
-        if touch.gesture=="double_click":
-            touch.gesture=None
-            Alarm()
-        # time.sleep_ms(1000)
+        for thisclock in clocks:
+            starttime=time.mktime(time.localtime())
+            while time.mktime(time.localtime())-starttime<duration:
+                ViewImageWithClock(lcd, rtc, **thisclock)
+                if touch.gesture=="double_click":
+                    touch.gesture=None
+                    Alarm(lcd, touch)
+                elif touch.gesture=="up":
+                    touch.gesture=None
+                    brightness=updateBrightness(brightness+0.1)
+                elif touch.gesture=="down":
+                    touch.gesture=None
+                    brightness=updateBrightness(brightness-0.1)
 
-    # while True:
-    #     # Alarm()
-    #     for image in images[1:]:
-    #         if touch.gesture=="long_press": break
-    #         ViewImageWithClock(images[0])
-    #         # time.sleep(5)
-    #         # print(f"Image: {image}")
-    #         if touch.gesture=="long_press": break
-    #         ViewImageWithClock(image)
-    #         # time.sleep(5)
-
-
+if __name__=='__main__':
+    Run()
